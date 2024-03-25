@@ -8,7 +8,18 @@ pluto <- read_csv("https://data.cityofnewyork.us/resource/64uk-42ks.csv?$limit=1
 
 demo_clean <- demolitions %>% 
   mutate(bbl = paste0(str_sub(community_board, start = 1, end = 1), block, str_sub(lot, start = 2, end = 5)),
-         filing_date = mdy(filing_date))
+         filing_date = mdy(filing_date),
+         job_date = mdy(job_start_date)
+         )
+  
+demo_filing <- demo_clean %>% 
+  group_by(bbl) %>% 
+  summarize(filing_date = min(filing_date))
+
+demo_complete <- demo_clean %>% 
+  filter(permit_status %in% c("ISSUED", "RE-ISSUED")) %>% 
+  group_by(bbl) %>% 
+  summarize(start_date = min(job_date))
 
 drv <- dbDriver("PostgreSQL")
 dsn_database = "nycdb"   # Specify the name of your Database
@@ -70,20 +81,32 @@ demos_approx_year_sum <- demos_rs_approx %>%
 ggplot(demos_approx_year_sum %>%  filter(year(date) < 2024 & year(date) >2016))+
   geom_line(mapping = aes(x = date, y = count))
 
-
 ################
 
 #use demo_clean for the join
 
-demos_rs <- inner_join(rs_list, demo_clean, by = c("ucbbl" = "bbl"))
+demos_rs <- inner_join(rs_list, demo_filing, by = c("ucbbl" = "bbl"))
+
+comp_demos_rs <-inner_join(rs_list, demo_complete, by = c("ucbbl" = "bbl"))
 
 rs_demos_sum <- demos_rs %>% 
   group_by(date = floor_date(filing_date, unit = "year")) %>% 
-  summarize(count = n())
+  summarize(count = n(),
+            units = sum(unitsstab2017))
 
-ggplot(rs_demos_sum %>%  filter(year(date) < 2024 & year(date) >2016))+
+comp_rs_demos_sum <- demos_rs %>% 
+  group_by(date = floor_date(filing_date, unit = "year")) %>% 
+  summarize(count = n(),
+            units = sum(unitsstab2017))
+
+rs_demos_sum %>% filter(year(date) < 2024 & year(date) >2016) %>% write_csv("demos_summary.csv")
+
+ggplot(rs_demos_sum %>%  filter(year(date) < 2024 & year(date) >2010))+
   geom_line(mapping = aes(x = date, y = count))+
   ylim(0, 80)
+
+ggplot(rs_demos_sum %>%  filter(year(date) < 2024 & year(date) >2010))+
+  geom_line(mapping = aes(x = date, y = units))
 
 bk_rs_demos_sum <- demos_rs %>% 
   group_by(date = floor_date(filing_date, unit = "year"), borough) %>% 
